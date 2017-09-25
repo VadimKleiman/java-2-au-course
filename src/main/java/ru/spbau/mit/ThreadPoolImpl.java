@@ -9,14 +9,14 @@ public class ThreadPoolImpl implements ThreadPool {
     private final ArrayDeque<LightFuture> deque = new ArrayDeque<>();
     private final ArrayList<Thread> workers = new ArrayList<>();
 
-    public ThreadPoolImpl(int nThread) {
+    ThreadPoolImpl(int nThread) {
         for (int i = 0; i < nThread; i++) {
             workers.add(new Thread(new Worker()));
         }
         workers.forEach(Thread::start);
     }
     @Override
-    public synchronized <T> LightFuture<T> submit(Supplier<T> task) {
+    public <T> LightFuture<T> submit(Supplier<T> task) {
         LightFutureImpl<T> future = new LightFutureImpl<>(task);
         synchronized (deque) {
             deque.add(future);
@@ -45,7 +45,7 @@ public class ThreadPoolImpl implements ThreadPool {
                 while (!Thread.interrupted()) {
                     synchronized (deque) {
                         while (deque.isEmpty()) {
-                            wait();
+                            deque.wait();
                         }
                         task = deque.removeFirst();
                     }
@@ -59,7 +59,7 @@ public class ThreadPoolImpl implements ThreadPool {
     public class LightFutureImpl<T> implements LightFuture<T> {
         private volatile boolean isDone = false;
         private Supplier<? extends T> task = null;
-        private volatile T result = null;
+        private T result = null;
         private Throwable error = null;
 
         LightFutureImpl(Supplier<? extends T> task) {
@@ -95,14 +95,14 @@ public class ThreadPoolImpl implements ThreadPool {
         }
 
         @Override
-        public void run() {
+        public synchronized void run() {
             try {
                 result = task.get();
             } catch (Throwable e) {
                 error = e;
             } finally {
                 isDone = true;
-                this.notifyAll();
+                notifyAll();
             }
         }
     }
