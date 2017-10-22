@@ -1,20 +1,21 @@
 package ru.spbau.mit;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
 
 class LockFreeListImpl<T> implements LockFreeList<T> {
     @Override
     public boolean isEmpty() {
-        final boolean[] mark = new boolean[1];
-        return head.getReference().next.get(mark) == null || mark[0];
+        return size.get() == 0;
     }
 
     @Override
     public void append(T value) {
         Node newNode = new Node(value);
         while(true) {
-            final Tuple last = find(null, true);
-            if (last.curr.next.compareAndSet(null, newNode, false, false)) {
+            final Tuple result = find(null, true);
+            if (result.curr.next.compareAndSet(null, newNode, false, false)) {
+                size.incrementAndGet();
                 break;
             }
         }
@@ -30,6 +31,7 @@ class LockFreeListImpl<T> implements LockFreeList<T> {
             if (!result.curr.next.attemptMark(result.next, true)) {
                 continue;
             }
+            size.decrementAndGet();
             result.prev.next.compareAndSet(result.curr, result.next, false, false);
             return true;
         }
@@ -41,7 +43,7 @@ class LockFreeListImpl<T> implements LockFreeList<T> {
     }
 
     private Tuple find(T value, boolean findLast) {
-        Node prev, curr, succ;
+        Node prev, curr, next;
         final boolean[] mark = new boolean[1];
         retry:
         while(true) {
@@ -53,16 +55,14 @@ class LockFreeListImpl<T> implements LockFreeList<T> {
                 } else if (!findLast && curr == null) {
                     return new Tuple(null, null, null);
                 }
-                succ = curr.next.get(mark);
+                next = curr.next.get(mark);
                 if (mark[0]) {
-                    if (!prev.next.compareAndSet(curr, succ, false, false)) {
+                    if (!prev.next.compareAndSet(curr, next, false, false)) {
                         continue retry;
                     }
                 } else {
-                    if (findLast && curr == null) {
-                        return new Tuple(null, prev, null);
-                    } else if (!findLast && curr.value.equals(value)) {
-                        return new Tuple(prev, curr, succ);
+                    if (!findLast && curr.value.equals(value)) {
+                        return new Tuple(prev, curr, next);
                     }
                     prev = curr;
                 }
@@ -96,5 +96,6 @@ class LockFreeListImpl<T> implements LockFreeList<T> {
         }
     }
 
+    private final AtomicInteger size = new AtomicInteger();
     private final AtomicMarkableReference<Node> head = new AtomicMarkableReference<>(new Node(), false);
 }
