@@ -5,6 +5,8 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 
+import static java.lang.Thread.sleep;
+
 public class ThreadPoolImplTest {
     private final int threadNumber = Runtime.getRuntime().availableProcessors();
     @Test
@@ -12,7 +14,7 @@ public class ThreadPoolImplTest {
         final int sleep = 100;
         int begin = Thread.activeCount();
         ThreadPoolImpl pool = new ThreadPoolImpl(threadNumber);
-        Thread.sleep(sleep);
+        sleep(sleep);
         int end = Thread.activeCount();
         Assert.assertEquals(end - begin, threadNumber);
         pool.shutdown();
@@ -109,5 +111,4 @@ public class ThreadPoolImplTest {
         }
         pool.shutdown();
     }
-
 }

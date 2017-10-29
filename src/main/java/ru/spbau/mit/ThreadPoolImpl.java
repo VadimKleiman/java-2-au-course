@@ -2,12 +2,14 @@ package ru.spbau.mit;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class ThreadPoolImpl implements ThreadPool {
-    private final ArrayDeque<LightFuture> deque = new ArrayDeque<>();
+    private final ArrayDeque<Runnable> deque = new ArrayDeque<>();
     private final ArrayList<Thread> workers = new ArrayList<>();
+    private volatile boolean isShutdown = false;
 
     ThreadPoolImpl(int nThread) {
         for (int i = 0; i < nThread; i++) {
@@ -17,9 +19,12 @@ public class ThreadPoolImpl implements ThreadPool {
     }
     @Override
     public <T> LightFuture<T> submit(Supplier<T> task) {
+        if (isShutdown) {
+            throw new IllegalStateException("ThreadPool can't submit new task");
+        }
         LightFutureImpl<T> future = new LightFutureImpl<>(task);
         synchronized (deque) {
-            deque.add(future);
+            deque.add(future::run);
             deque.notifyAll();
         }
         return future;
@@ -27,6 +32,7 @@ public class ThreadPoolImpl implements ThreadPool {
 
     @Override
     public void shutdown() {
+        isShutdown = true;
         workers.forEach(Thread::interrupt);
         workers.forEach(w -> {
             try {
@@ -37,11 +43,11 @@ public class ThreadPoolImpl implements ThreadPool {
         });
     }
 
-    private class Worker implements Runnable {
+    private final class Worker implements Runnable {
         @Override
         public void run() {
             try {
-                LightFuture task;
+                Runnable task;
                 while (!Thread.interrupted()) {
                     synchronized (deque) {
                         while (deque.isEmpty()) {
@@ -56,11 +62,12 @@ public class ThreadPoolImpl implements ThreadPool {
         }
     }
 
-    public class LightFutureImpl<T> implements LightFuture<T> {
-        private volatile boolean isDone = false;
+    private final class LightFutureImpl<T> implements LightFuture<T> {
         private Supplier<? extends T> task = null;
         private T result = null;
         private Throwable error = null;
+        private final ArrayList<LightFutureImpl<?>> arrayFunc = new ArrayList<>();
+        private volatile boolean isDone = false;
 
         LightFutureImpl(Supplier<? extends T> task) {
             this.task = task;
@@ -72,9 +79,17 @@ public class ThreadPoolImpl implements ThreadPool {
         }
 
         @Override
-        public <R> LightFuture<R> thenApply(Function<T, R> func) {
+        public <R> LightFuture<R> thenApply(Function<? super T, R> func) {
             Supplier<R> task = () -> func.apply(get());
-            return submit(task);
+            synchronized (arrayFunc) {
+                if (isDone) {
+                    return submit(task);
+                } else {
+                    LightFutureImpl<R> out = new LightFutureImpl<>(task);
+                    arrayFunc.add(out);
+                    return out;
+                }
+            }
         }
 
         @Override
@@ -86,18 +101,22 @@ public class ThreadPoolImpl implements ThreadPool {
                     }
                 }
             } catch (InterruptedException e) {
-                throw new LightExecutionException();
+                throw new LightExecutionException("Interrupt", e);
             }
             if (error != null) {
-                throw new LightExecutionException();
+                throw new LightExecutionException("Function exited with an error ", error);
             }
             return result;
         }
 
-        @Override
-        public synchronized void run() {
+        private synchronized void run() {
             try {
                 result = task.get();
+                isDone = true;
+                synchronized (arrayFunc) {
+                    arrayFunc.forEach(LightFutureImpl::run);
+                    arrayFunc.clear();
+                }
             } catch (Throwable e) {
                 error = e;
             } finally {
