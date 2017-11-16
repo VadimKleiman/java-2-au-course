@@ -2,10 +2,10 @@ package ru.spbau.mit;
 
 import java.util.ArrayList;
 
-public interface ClientFTP {
+public interface ClientFTP extends AutoCloseable {
     boolean connect();
 
-    void disconnect();
+    void close() throws Exception;
 
     ArrayList<Tuple<String, Boolean>> executeList(String path);
 

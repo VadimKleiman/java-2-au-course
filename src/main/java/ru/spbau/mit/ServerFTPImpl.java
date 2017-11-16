@@ -4,6 +4,7 @@ package ru.spbau.mit;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
@@ -28,7 +29,10 @@ public class ServerFTPImpl implements ServerFTP {
                     Socket socket = serverSocket.accept();
                     executor.submit(() -> processing(socket));
                 }
-            } catch (IOException e) {
+            }
+            catch (SocketException ignore) {
+            }
+            catch (IOException e) {
                 e.printStackTrace();
             }
         }).start();
@@ -72,9 +76,10 @@ public class ServerFTPImpl implements ServerFTP {
     }
 
     private void processing(Socket socket) {
-        try {
+        try (
             DataInputStream in = new DataInputStream(socket.getInputStream());
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream()))
+        {
             int type;
             String path;
             while (true) {
@@ -92,7 +97,6 @@ public class ServerFTPImpl implements ServerFTP {
                         return;
                 }
             }
-
         } catch (IOException e) {
             e.printStackTrace();
         }

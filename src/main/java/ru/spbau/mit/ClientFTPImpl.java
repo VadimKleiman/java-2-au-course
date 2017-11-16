@@ -35,7 +35,7 @@ public class ClientFTPImpl implements ClientFTP {
     }
 
     @Override
-    public void disconnect() {
+    public void close() throws Exception{
         try {
             out.writeInt(0);
         } catch (IOException e) {
